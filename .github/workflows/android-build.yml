@@ -107,6 +107,23 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
+      - name: Patch FFmpeg Configuration
+        run: |
+          # Mise à jour du repository FFmpeg Kit
+          sed -i '/maven.ffmpeg.org/d' android/build.gradle
+          sed -i '/repositories {/a \        maven { url "https://ffmpeg-kit.org/maven" }' android/build.gradle
+          
+          # Forcer une version compatible
+          echo "ext { ffmpegKitVersion = '6.0.LTS' }" >> android/build.gradle
+          
+          # Alternative: utiliser https-gpl si full-gpl n'est pas obligatoire
+          sed -i 's/ffmpegKitPackage = "full-gpl"/ffmpegKitPackage = "https-gpl"/' android/build.gradle
+          
+          # Vérification des changements
+          echo "=== Configuration FFmpeg mise à jour ==="
+          grep -A 2 'repositories {' android/build.gradle
+          grep ffmpegKit android/build.gradle
+
       - name: Ajouter compileSdkVersion si manquant
         run: |
           if ! grep -q "compileSdkVersion" android/build.gradle; then
