@@ -24,7 +24,6 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
-
       - name: Vérification de la structure du projet
         run: |
           echo "Vérification de la structure du projet..."
@@ -41,7 +40,6 @@ jobs:
             exit 1
           fi
           echo "Structure du projet validée."
-
       - name: Vérifier et installer jq
         run: |
           if ! command -v jq &> /dev/null; then
@@ -50,7 +48,6 @@ jobs:
           else
             echo "jq est déjà installé."
           fi
-
       - name: Install Android SDK (cmdline-tools)
         run: |
           echo "Installation du SDK Android..."
@@ -63,14 +60,12 @@ jobs:
           echo "$PWD/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$PWD/android-sdk/platform-tools" >> $GITHUB_PATH
           echo "ANDROID_SDK_ROOT=$PWD/android-sdk" >> $GITHUB_ENV
-
       - name: Accepter les licences SDK et installer les composants nécessaires
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
           sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"
           sdkmanager --update
-
       - name: Lire version de Node.js depuis package.json
         id: detect-node
         run: |
@@ -84,7 +79,6 @@ jobs:
           else
             echo "version=18" >> $GITHUB_OUTPUT
           fi
-
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
@@ -99,7 +93,6 @@ jobs:
             echo "package-lock.json absent. Utilisation de 'npm install'..."
             npm install
           fi
-
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
@@ -107,37 +100,18 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Patch FFmpeg Configuration
-        run: |
-          # Mise à jour du repository FFmpeg Kit
-          sed -i '/maven.ffmpeg.org/d' android/build.gradle
-          sed -i '/repositories {/a \        maven { url "https://ffmpeg-kit.org/maven" }' android/build.gradle
-          
-          # Forcer une version compatible
-          echo "ext { ffmpegKitVersion = '6.0.LTS' }" >> android/build.gradle
-          
-          # Alternative: utiliser https-gpl si full-gpl n'est pas obligatoire
-          sed -i 's/ffmpegKitPackage = "full-gpl"/ffmpegKitPackage = "https-gpl"/' android/build.gradle
-          
-          # Vérification des changements
-          echo "=== Configuration FFmpeg mise à jour ==="
-          grep -A 2 'repositories {' android/build.gradle
-          grep ffmpegKit android/build.gradle
-
       - name: Ajouter compileSdkVersion si manquant
         run: |
           if ! grep -q "compileSdkVersion" android/build.gradle; then
             echo "Ajout de compileSdkVersion = 33"
             sed -i '/ext {/a\        compileSdkVersion = 33' android/build.gradle
           fi
-
       - name: Corriger le plugin 'maven' de react-native-reanimated
         run: |
           FILE="node_modules/react-native-reanimated/android/build.gradle"
           if grep -q "apply plugin: 'maven'" "$FILE"; then
             sed -i "s/apply plugin: 'maven'/apply plugin: 'maven-publish'/" "$FILE"
           fi
-
       - name: Générer un keystore de débogage
         run: |
           if ! keytool -list -v -keystore android/app/debug.keystore -alias androiddebugkey -storepass android > /dev/null 2>&1; then
@@ -160,7 +134,6 @@ jobs:
             -keystore android/app/debug.keystore \
             -alias androiddebugkey \
             -storepass android
-
       - name: Build Debug APK
         run: ./gradlew assembleDebug -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m" --no-daemon
         working-directory: android
