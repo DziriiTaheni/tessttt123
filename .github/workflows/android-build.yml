@@ -67,7 +67,7 @@ jobs:
       - name: Accepter les licences SDK et installer les composants nécessaires
         run: |
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
           sdkmanager --update
 
       - name: Lire version de Node.js depuis package.json
@@ -92,18 +92,10 @@ jobs:
       - name: Install npm dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Check node_modules content
-        run: ls -l node_modules/@react-native-community/cli-platform-android
-
-
-
       - name: Clean npm and reinstall
         run: |
           rm -rf node_modules package-lock.json
           npm install --legacy-peer-deps
-
-
-
 
       - name: Set up JDK 17
         uses: actions/setup-java@v3
@@ -112,11 +104,18 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
+      - name: Configurer les dépôts Maven
+        run: |
+          # Ajouter mavenCentral() et corriger la configuration FFmpegKit
+          sed -i '/repositories {/a\        mavenCentral()' android/build.gradle
+          sed -i '/maven {.*ffmpeg-kit/d' android/build.gradle
+          cat android/build.gradle
+
       - name: Ajouter compileSdkVersion si manquant
         run: |
           if ! grep -q "compileSdkVersion" android/build.gradle; then
-            echo "Ajout de compileSdkVersion = 33"
-            sed -i '/ext {/a\        compileSdkVersion = 33' android/build.gradle
+            echo "Ajout de compileSdkVersion = 34"
+            sed -i '/ext {/a\        compileSdkVersion = 34' android/build.gradle
           fi
 
       - name: Générer un keystore de débogage
@@ -137,13 +136,9 @@ jobs:
           else
             echo "La clé androiddebugkey existe déjà. Aucune action requise."
           fi
-          keytool -list -v \
-            -keystore android/app/debug.keystore \
-            -alias androiddebugkey \
-            -storepass android
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m" --no-daemon
+        run: ./gradlew assembleDebug -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m" --no-daemon --stacktrace
         working-directory: android
 
       - name: Upload APK artifact
