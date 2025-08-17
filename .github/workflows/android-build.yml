@@ -11,6 +11,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.FFMPEG_PAT }} # 🔑 PAT GitHub avec read:packages
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,33 +28,22 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
+
       - name: Vérification de la structure du projet
         run: |
-          echo "Vérification de la structure du projet..."
-          if [ ! -d "android" ]; then
-            echo "Le répertoire 'android' est manquant. Assurez-vous que c'est un projet Android ou React Native."
-            exit 1
-          fi
-          if [ ! -f "package.json" ]; then
-            echo "Le fichier 'package.json' est manquant. Assurez-vous que c'est un projet React Native."
-            exit 1
-          fi
-          if [ ! -f "android/build.gradle" ]; then
-            echo "Le fichier 'android/build.gradle' est manquant."
-            exit 1
-          fi
-          echo "Structure du projet validée."
+          if [ ! -d "android" ]; then echo "Répertoire android manquant"; exit 1; fi
+          if [ ! -f "package.json" ]; then echo "package.json manquant"; exit 1; fi
+          if [ ! -f "android/build.gradle" ]; then echo "android/build.gradle manquant"; exit 1; fi
+          echo "Structure OK"
+
       - name: Vérifier et installer jq
         run: |
           if ! command -v jq &> /dev/null; then
-            echo "jq n'est pas installé, installation en cours..."
             sudo apt-get update && sudo apt-get install -y jq
-          else
-            echo "jq est déjà installé."
           fi
+
       - name: Install Android SDK (cmdline-tools)
         run: |
-          echo "Installation du SDK Android..."
           mkdir -p android-sdk/cmdline-tools
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O sdk.zip
           unzip sdk.zip -d tmp-sdk
@@ -60,39 +53,33 @@ jobs:
           echo "$PWD/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$PWD/android-sdk/platform-tools" >> $GITHUB_PATH
           echo "ANDROID_SDK_ROOT=$PWD/android-sdk" >> $GITHUB_ENV
+
       - name: Accepter les licences SDK et installer les composants nécessaires
         run: |
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-          sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
           sdkmanager --update
+
       - name: Lire version de Node.js depuis package.json
         id: detect-node
         run: |
           if [ -f "package.json" ]; then
             version=$(jq -r '.engines.node' package.json)
-            if [ "$version" == "null" ] || [ -z "$version" ]; then
-              echo "version=18" >> $GITHUB_OUTPUT
-            else
-              echo "version=$version" >> $GITHUB_OUTPUT
-            fi
+            [ "$version" == "null" ] && version=18
           else
-            echo "version=18" >> $GITHUB_OUTPUT
+            version=18
           fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: ${{ steps.detect-node.outputs.version }}
 
-      - name: Installer les dépendances npm (ci ou install)
+      - name: Installer les dépendances npm
         run: |
-          if [ -f "package-lock.json" ]; then
-            echo "package-lock.json trouvé. Utilisation de 'npm ci'..."
-            npm ci
-          else
-            echo "package-lock.json absent. Utilisation de 'npm install'..."
-            npm install
-          fi
+          if [ -f "package-lock.json" ]; then npm ci; else npm install; fi
+
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
@@ -100,24 +87,23 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Ajouter compileSdkVersion si manquant
+      - name: Configurer l'accès à FFmpeg Kit
         run: |
-          if ! grep -q "compileSdkVersion" android/build.gradle; then
-            echo "Ajout de compileSdkVersion = 33"
-            sed -i '/ext {/a\        compileSdkVersion = 33' android/build.gradle
-          fi
-      - name: Corriger le plugin 'maven' de react-native-reanimated
-        run: |
-          FILE="node_modules/react-native-reanimated/android/build.gradle"
-          if grep -q "apply plugin: 'maven'" "$FILE"; then
-            sed -i "s/apply plugin: 'maven'/apply plugin: 'maven-publish'/" "$FILE"
-          fi
+          echo "Ajout du repo FFmpeg Kit dans build.gradle"
+          sed -i '/allprojects {/,/}/ {
+            /repositories {/a \
+                maven { url "https://maven.pkg.github.com/arthenica/ffmpeg-kit" \n\
+                    credentials { \n\
+                        username = System.getenv("GITHUB_ACTOR") \n\
+                        password = System.getenv("GITHUB_TOKEN") \n\
+                    } \n\
+                }
+          }' android/build.gradle
+
       - name: Générer un keystore de débogage
         run: |
           if ! keytool -list -v -keystore android/app/debug.keystore -alias androiddebugkey -storepass android > /dev/null 2>&1; then
-            echo "Génération d'une nouvelle clé de débogage..."
-            keytool -genkeypair \
-              -v \
+            keytool -genkeypair -v \
               -keystore android/app/debug.keystore \
               -alias androiddebugkey \
               -storepass android \
@@ -127,16 +113,11 @@ jobs:
               -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US" \
               -deststoretype pkcs12
-          else
-            echo "La clé androiddebugkey existe déjà. Aucune action requise."
           fi
-          keytool -list -v \
-            -keystore android/app/debug.keystore \
-            -alias androiddebugkey \
-            -storepass android
+
       - name: Build Debug APK
-        run: ./gradlew assembleDebug -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m" --no-daemon
         working-directory: android
+        run: ./gradlew assembleDebug -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m" --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
