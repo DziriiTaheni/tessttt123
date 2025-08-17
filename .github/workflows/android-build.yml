@@ -11,6 +11,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env: # 🔑 On définit l'accès au registry globalement
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.FFMPEG_PAT }} # ⚠️ Crée un secret FFMPEG_PAT avec un PAT GitHub (scope: read:packages)
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -97,20 +101,11 @@ jobs:
 
       - name: Configurer l'accès à FFmpeg Kit
         run: |
-          echo "Configuration de l'accès à FFmpeg Kit..."
-          cat <<EOT >> android/build.gradle
-          allprojects {
-              repositories {
-                  maven {
-                      url "https://maven.pkg.github.com/arthenica/ffmpeg-kit"
-                      credentials {
-                          username = System.getenv("GITHUB_ACTOR")
-                          password = System.getenv("GITHUB_TOKEN")
-                      }
-                  }
-              }
-          }
-          EOT
+          echo "Ajout du repo FFmpeg Kit dans android/build.gradle..."
+          sed -i '/allprojects {/,/}/ {
+            /repositories {/a \
+                maven { url "https://maven.pkg.github.com/arthenica/ffmpeg-kit" \n            credentials { \n                username = System.getenv("GITHUB_ACTOR") \n                password = System.getenv("GITHUB_TOKEN") \n            } \n        }
+          }' android/build.gradle
 
       - name: Générer un keystore de débogage
         run: |
@@ -132,8 +127,6 @@ jobs:
           fi
 
       - name: Build Debug APK
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew assembleDebug --no-daemon
         working-directory: android
 
