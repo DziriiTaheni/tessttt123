@@ -92,11 +92,6 @@ jobs:
       - name: Install npm dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Clean npm and reinstall
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install --legacy-peer-deps
-
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
@@ -104,45 +99,21 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Configurer les dépôts Maven et résoudre FFmpegKit
+      - name: Modify Gradle files for FFmpegKit
         run: |
-          # Ajouter mavenCentral() et JitPack
-          sed -i '/repositories {/a\        mavenCentral()\n        maven { url "https://jitpack.io" }' android/build.gradle
+          # Add mavenCentral() if not present
+          if ! grep -q "mavenCentral()" android/build.gradle; then
+            sed -i '/repositories {/a\        mavenCentral()\n        maven { url "https://jitpack.io" }' android/build.gradle
+          fi
           
-          # Modifier la dépendance FFmpegKit pour utiliser une version disponible
+          # Change FFmpegKit dependency to public version
           sed -i 's/com.arthenica:ffmpeg-kit-full-gpl:6.0-2/com.arthenica:ffmpeg-kit-full:4.5.1.LTS/g' android/app/build.gradle
           
-          # Afficher les modifications pour vérification
-          echo "Contenu de android/build.gradle après modification:"
+          # Display changes for verification
+          echo "Modified android/build.gradle:"
           cat android/build.gradle
-          echo "Contenu de android/app/build.gradle après modification:"
+          echo "Modified android/app/build.gradle:"
           cat android/app/build.gradle
-
-      - name: Ajouter compileSdkVersion si manquant
-        run: |
-          if ! grep -q "compileSdkVersion" android/build.gradle; then
-            echo "Ajout de compileSdkVersion = 34"
-            sed -i '/ext {/a\        compileSdkVersion = 34' android/build.gradle
-          fi
-
-      - name: Générer un keystore de débogage
-        run: |
-          if ! keytool -list -v -keystore android/app/debug.keystore -alias androiddebugkey -storepass android > /dev/null 2>&1; then
-            echo "Génération d'une nouvelle clé de débogage..."
-            keytool -genkeypair \
-              -v \
-              -keystore android/app/debug.keystore \
-              -alias androiddebugkey \
-              -storepass android \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US" \
-              -deststoretype pkcs12
-          else
-            echo "La clé androiddebugkey existe déjà. Aucune action requise."
-          fi
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m" --no-daemon --stacktrace
